@@ -1,0 +1,223 @@
+---
+title: "Untitled"
+author: "Olajuwon"
+date: "10/23/2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+
+```{r message=FALSE}
+library(tidyverse)
+```
+
+
+#Reads the data into R
+
+```{r}
+Lake<-read.csv("Lake.csv")
+
+```
+
+
+
+#I removed the first two columns with strings. this is to capture columns with numeric data
+
+```{r}
+Lake1<- data.frame(Lake[,3:43]) 
+```
+
+
+#This is to create a long data, it's easier to work with long data vs wide in certain scenarios.
+
+Gather
+
+```{r}
+Lake_long<- gather(data= Lake, key= Variable, value= Value, -State, -MonitoringLocationName)
+
+
+```
+
+#Use mutate to do a log transformation of the Values to increase symmetry in the data
+
+Transform
+
+```{r}
+Lake_long_log10<-mutate(Lake_long,Value= log10(Value+1))
+
+
+
+
+
+
+```
+
+
+
+```{r}
+library(ggridges)
+```
+
+
+#Plot to visualize variables by state. 
+
+```{r}
+ggplot(Lake_long_log10)+
+  geom_density_ridges(aes(y=State, x=Value, fill=State), alpha=0.5)+
+  facet_wrap(~Variable, scales="free")+theme_classic()
+
+ggsave("Lake_long.png", height=10, width=15, dpi=600)
+```
+#I prefer installing packages outside my code chunks. For other parts of the analysis we require devtools and ggbiplot
+install.packages("devtools")
+install_github("vqv/ggbiplot")
+
+```{r}
+
+library("devtools")
+library("ggbiplot")
+```
+
+
+#Another set of data transformation while keeping our duplicate.
+
+
+
+
+
+
+```{r}
+Lake_log10<-Lake
+Lake_log10[,3:43]<-data.frame(log10((Lake[,3:43])+1))
+
+
+
+
+```
+
+
+#TIme to reveal our components
+
+```{r}
+Lake_pca_log<-prcomp(Lake_log10[,3:43],scale.=TRUE)
+```
+
+
+Summary
+
+```{r}
+summary(Lake_pca_log)
+
+
+```
+
+
+
+
+
+#Some data visualization to see how our screeplot looks like
+
+```{r}
+plot(Lake_pca_log)
+```
+
+
+
+Perm
+```{r}
+pca_eigenperm<-function(data,  nperm=1000) {
+  pca_out<-prcomp(data, scale.=T)
+  eigenperm<-data.frame(matrix(NA, nperm, ncol(data)))
+  n<-ncol(data)
+  data_i<-data.frame(matrix(NA, nrow(data), ncol(data)))
+  for (j in 1:nperm){
+  for (i in 1:n) {
+    data_i[,i]<-sample(data[,i], replace=F)
+    }
+  pca.perm<-prcomp(data_i, scale.=T)
+  eigenperm[j,]<-pca.perm$sdev^2
+  }
+  
+  colnames(eigenperm)<-colnames(pca_out$rotation)
+  eigenperm
+}
+ 
+```
+ 
+ #some permutations on our pca
+ 
+```{r}
+Lake_pca_perm<-pca_eigenperm(Lake_log10[,3:43], nperm=1000)
+
+```
+ 
+ 
+
+#99th percentile of each pc plus eigen values
+
+```{r}
+
+Lake_pca_rand99<-
+  data.frame("Random_0.99"=sapply(Lake_pca_perm, quantile, 0.99)) %>% 
+  mutate(PC=colnames(Lake_pca_log$rotation)) %>%  
+  cbind(Eigenvalues=Lake_pca_log$sdev^2) 
+  
+ 
+```
+
+
+
+
+
+#plot 
+
+```{r}
+
+Lake_pca_rand99_long<-
+  gather(Lake_pca_rand99[1:9,], key=Variable, value=Value, -PC) 
+```
+
+#Plotting and saving our file using ggsave
+
+```{r}
+ggplot(Lake_pca_rand99_long, aes(PC, Value, fill=Variable))+
+  geom_bar(stat="identity", position=position_dodge())+
+  labs(y="Eigenvalue", x="", fill="")+
+  theme_classic()
+
+ggsave("fa_pca_rand99.png", height=5, width=7, dpi=600)
+```
+
+#time to view our PC Loadins
+
+
+```{r}
+Lake_loadings<-data.frame(Lake_pca_log$rotation[,1:5] )
+Lake_loadings
+```
+
+```{r}
+Lake_cor_loadings<- t(as.matrix(Lake_loadings)) * (Lake_pca_log$sdev)
+Lake_cor_loadings<- t(Lake_cor_loadings)
+Lake_cor_loadings
+```
+
+
+
+
+
+
+#Behold our BIplot that explains how various physicochemical factors are related in Texas and Oklahoma
+```{r}
+
+library(ggbiplot)
+
+ggbiplot(Lake_pca_log, choices=c(1,2),  obs.scale = 1, varname.size=2,  var.scale = 1, ellipse=TRUE, color=Lake_log10$State, group=Lake_log10$State)+
+  labs(color="State")+
+  theme_classic()
+ ggsave("Lake_pca_plot_view.png", height=10, width=15, dpi=600)
+```
+
+
+
